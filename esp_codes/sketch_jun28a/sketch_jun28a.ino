@@ -1,90 +1,140 @@
 #include <ESP8266WiFi.h>
-#include <PubSubClient.h>  // Ensure you're using the right library for MQTT
+#include <PubSubClient.h>
+#include <DHT.h>  // For humidity sensor
 
-// WiFi and MQTT broker credentials
-const char* ssid = "rv"; // Router SSID
-const char* password = "ravija12345"; // Router password
-const char* mqtt_server = "test.mosquitto.org"; // MQTT broker
+// ------------------- WiFi & MQTT Configuration -------------------
+const char* ssid = "rv";                     // WiFi SSID
+const char* password = "ravija12345";        // WiFi Password
+const char* mqtt_server = "broker.emqx.io";  // MQTT Broker address
 
-// Sensor pins
-const float humiditySensor = D5;   // Water level sensor connected to D2
+// ------------------- Sensor Configuration -------------------
+// Soil Moisture Sensor
+const int soilMoisturePin = A0;  // Analog pin A0
 
-// Create WiFi and MQTT clients
+// DHT Sensor (Humidity & Temperature)
+#define DHTPIN D1      // Connect DHT sensor data pin to D6
+#define DHTTYPE DHT11  // Or use DHT22 if using that sensor
+DHT dht(DHTPIN, DHTTYPE);
+
+// Motion Sensor (motion)
+#define PIR_PIN D2
+
+
+// ------------------- MQTT Setup -------------------
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// wifi setup
+// ------------------- WiFi Connection -------------------
 void setup_wifi() {
   delay(10);
-  Serial.print("Connecting to WiFi...");
+  Serial.println("Connecting to WiFi...");
   WiFi.begin(ssid, password);
+
+  // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println(" WiFi connected");
+
+  Serial.println("\nWiFi connected");
+  Serial.println("MAC: " + WiFi.macAddress());
 }
 
-// callback for the mqtt topic
+// ------------------- MQTT Callback -------------------
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("]: ");
-  for (int i = 0; i < length; i++) {
+  for (unsigned int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
 }
 
-// wifi reconnect
+// ------------------- Reconnect to MQTT -------------------
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP8266Client_" + String(WiFi.macAddress());
+
+    String clientId = "ESP8266-" + WiFi.macAddress();
 
     if (client.connect(clientId.c_str())) {
       Serial.println("Connected to MQTT broker");
-      client.subscribe("sensor/device");
+      client.subscribe("sensor/device");  // Subscribe to topic if needed
     } else {
-      Serial.print("failed, rc=");
+      Serial.print("Failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.println(" — trying again in 5 seconds");
       delay(5000);
     }
   }
 }
 
+// ------------------- Setup -------------------
 void setup() {
   Serial.begin(115200);
-  setup_wifi();
-  
-  pinMode(humiditySensor, INPUT_PULLUP);   // Water sensor with internal pull-up resistor
-  
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
+
+  setup_wifi();                     // Connect to WiFi
+  dht.begin();                      // Start DHT sensor
+  pinMode(soilMoisturePin, INPUT);  // Setup soil pin
+  pinMode(PIR_PIN, INPUT_PULLUP);   // motion
+
+  client.setServer(mqtt_server, 1883);  // Set MQTT broker
+  client.setCallback(callback);         // Set callback for incoming MQTT
 }
 
+// ------------------- Main Loop -------------------
 void loop() {
   if (!client.connected()) {
-    reconnect();
+    reconnect();  // Ensure MQTT connection
   }
   client.loop();
 
   static unsigned long lastMsg = 0;
   unsigned long now = millis();
-  if (now - lastMsg > 2000) {  // Send data every 2 seconds
+
+  if (now - lastMsg > 3000) {  // Send every 3 seconds
     lastMsg = now;
 
-    // Read water sensor value (digital)
-    float waterLevel = digitalRead(humiditySensor);
+    // ----------- Read Soil Moisture -----------
+    int moistureValue = analogRead(soilMoisturePin);
+    Serial.print("Analog Moisture Value: ");
+    Serial.println(moistureValue);
 
-    // Prepare JSON payload for all sensors
-    String payload = "{\"water_level\": " + String(waterLevel) + "}";
+    String moistureStatus = (moistureValue < 500) ? "Water Available" : "Water Not Available";
 
-    Serial.print("Attempting to publish: ");
+    // ----------- Read Humidity -----------
+    float humidity = dht.readHumidity();
+
+    if (isnan(humidity)) {
+      Serial.println("Failed to read from DHT sensor!");
+      return;
+    }
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+
+    // Motion Sensor
+    int motionDetected = digitalRead(PIR_PIN);
+    String motionStatus = (motionDetected == HIGH) ? "Motion Detected" : "No Motion";
+
+    Serial.println(motionStatus);
+
+
+    // ----------- Create JSON Payload -----------
+    String payload = "{";
+    payload += "\"moisture\": " + String(moistureValue) + ",";
+    payload += "\"status\": \"" + moistureStatus + "\",";
+    payload += "\"humidity\": " + String(humidity) + ",";
+    payload += "\"motion\": \"" + motionStatus + "\"";
+    payload += "}";
+
+
+    Serial.print("Publishing payload: ");
     Serial.println(payload);
 
-    // Publish the data to the MQTT broker
+    // ----------- Publish to MQTT -----------
     if (client.publish("sensor/data", payload.c_str())) {
       Serial.println("Message published successfully");
     } else {
