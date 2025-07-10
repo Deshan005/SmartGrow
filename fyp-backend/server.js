@@ -35,8 +35,8 @@ db.connect((err) => {
     });
 });
 
-// ESP8266 URL (Update with your ESP8266 IP and port)
-const ESP8266_URL = "http://192.168.56.1:1883"; // Removed :1883, assuming HTTP endpoint
+// ESP8266 URL
+const ESP8266_URL = "http://192.168.56.1"; // Corrected to HTTP port
 console.log(ESP8266_URL);
 
 // JWT Secret
@@ -134,11 +134,47 @@ app.post('/predict_water_level', verifyToken, (req, res) => {
   res.json({ water_level: Math.min(70, Math.max(30, waterLevel)) });
 });
 
-// WebSocket server (moved from mqtt.js for consistency)
+// New endpoint for manual water level setting
+app.post('/manual_set_water_level', verifyToken, async (req, res) => {
+  const { plant_type, growth_stage } = req.body;
+  let waterLevel = 40; // Base level
+  if (plant_type === 'Brinjal') waterLevel += 5;
+  if (growth_stage === 'Seedling') waterLevel += 10;
+  else if (growth_stage === 'Flowering') waterLevel += 5;
+  else if (growth_stage === 'Fruiting') waterLevel += 15;
+  await axios.post(`${ESP8266_URL}/setWaterLevel`, { level: waterLevel });
+  res.json({ success: true, water_level: waterLevel });
+});
+
+// WebSocket server with automatic adjustment
 const wss = new WebSocket.Server({ port: 5001 });
+
+let latestData = {}; // Store the latest MQTT data
+
+wss.on('connection', (ws) => {
+  console.log('Client connected to WebSocket');
+  ws.send(JSON.stringify(latestData)); // Send latest data to new client
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
 
 // Call the MQTT setup function
 mqttHandler(wss);
+
+// Automatic water level adjustment for Seedling stage
+setInterval(async () => {
+  if (latestData.growth_stage === 'Seedling' && latestData.waterLevel) {
+    const newLevel = Math.min(70, latestData.waterLevel + 5);
+    await axios.post(`${ESP8266_URL}/setWaterLevel`, { level: newLevel });
+    latestData.waterLevel = newLevel;
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(latestData));
+      }
+    });
+  }
+}, 10000); // Adjust every 10 seconds
 
 app.listen(5000, () => console.log('Express server running on port 5000'));
 console.log('WebSocket server running on port 5001');

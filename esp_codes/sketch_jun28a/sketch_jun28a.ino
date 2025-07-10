@@ -3,26 +3,27 @@
 #include <DHT.h>  // For humidity sensor
 
 // ------------------- WiFi & MQTT Configuration -------------------
-const char* ssid = "rv";                     // WiFi SSID
-const char* password = "ravija12345";        // WiFi Password
-const char* mqtt_server = "broker.emqx.io";  // MQTT Broker address
+const char* ssid = "Galaxy A122A41";
+const char* password = "deshan2005";
+const char* mqtt_server = "broker.emqx.io";
 
 // ------------------- Sensor Configuration -------------------
-// Soil Moisture Sensor
-const int soilMoisturePin = A0;  // Analog pin A0
-
-// DHT Sensor (Humidity & Temperature)
-#define DHTPIN D1      // Connect DHT sensor data pin to D6
-#define DHTTYPE DHT11  // Or use DHT22 if using that sensor
+const int soilMoisturePin = A0;  // Soil moisture sensor
+#define DHTPIN D1
+#define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
-// Motion Sensor (motion)
 #define PIR_PIN D2
-
+#define MOTOR_PIN D3
+bool motorState = LOW;
 
 // ------------------- MQTT Setup -------------------
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+// Motion detection debounce
+unsigned long lastMotionTime = 0;
+const unsigned long debounceDelay = 5000;
 
 // ------------------- WiFi Connection -------------------
 void setup_wifi() {
@@ -30,7 +31,6 @@ void setup_wifi() {
   Serial.println("Connecting to WiFi...");
   WiFi.begin(ssid, password);
 
-  // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -55,12 +55,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-
     String clientId = "ESP8266-" + WiFi.macAddress();
 
     if (client.connect(clientId.c_str())) {
       Serial.println("Connected to MQTT broker");
-      client.subscribe("sensor/device");  // Subscribe to topic if needed
+      client.subscribe("sensor/device");
     } else {
       Serial.print("Failed, rc=");
       Serial.print(client.state());
@@ -73,68 +72,87 @@ void reconnect() {
 // ------------------- Setup -------------------
 void setup() {
   Serial.begin(115200);
+  setup_wifi();
+  dht.begin();
 
-  setup_wifi();                     // Connect to WiFi
-  dht.begin();                      // Start DHT sensor
-  pinMode(soilMoisturePin, INPUT);  // Setup soil pin
-  pinMode(PIR_PIN, INPUT_PULLUP);   // motion
+  pinMode(soilMoisturePin, INPUT);
+  pinMode(PIR_PIN, INPUT_PULLUP);
+  pinMode(MOTOR_PIN, OUTPUT);
+  digitalWrite(MOTOR_PIN, LOW);
 
-  client.setServer(mqtt_server, 1883);  // Set MQTT broker
-  client.setCallback(callback);         // Set callback for incoming MQTT
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 }
 
 // ------------------- Main Loop -------------------
 void loop() {
   if (!client.connected()) {
-    reconnect();  // Ensure MQTT connection
+    reconnect();
   }
   client.loop();
 
   static unsigned long lastMsg = 0;
   unsigned long now = millis();
 
-  if (now - lastMsg > 3000) {  // Send every 3 seconds
+  if (now - lastMsg > 3000) {
     lastMsg = now;
 
-    // ----------- Read Soil Moisture -----------
+    // --- Read Soil Moisture ---
     int moistureValue = analogRead(soilMoisturePin);
-    Serial.print("Analog Moisture Value: ");
-    Serial.println(moistureValue);
+    bool isMoistureLow = (moistureValue < 200);  // Adjust threshold as needed
+    String moistureStatus = isMoistureLow ? "Dry" : "Wet";
 
-    String moistureStatus = (moistureValue < 500) ? "Water Available" : "Water Not Available";
+    Serial.print("Soil Moisture: ");
+    Serial.print(moistureValue);
+    Serial.print(" => Status: ");
+    Serial.println(moistureStatus);
 
-    // ----------- Read Humidity -----------
+    // --- Motor Control ---
+    if (moistureStatus == "Wet" ) {
+      digitalWrite(MOTOR_PIN, HIGH);  // Turn motor ON
+      Serial.println("Motor OFF - Soil is WET");;
+    } else {
+      digitalWrite(MOTOR_PIN, LOW);  // Turn motor OFF
+      Serial.println("Motor ON - Soil is DRY");
+    }
+
+    // --- Read Humidity ---
     float humidity = dht.readHumidity();
-
     if (isnan(humidity)) {
       Serial.println("Failed to read from DHT sensor!");
       return;
     }
-
     Serial.print("Humidity: ");
     Serial.print(humidity);
     Serial.println(" %");
 
-    // Motion Sensor
+    // --- Read Motion ---
     int motionDetected = digitalRead(PIR_PIN);
     String motionStatus = (motionDetected == HIGH) ? "Motion Detected" : "No Motion";
+    unsigned long currentMotionTime = 0;
 
-    Serial.println(motionStatus);
+    if (motionDetected == HIGH && (now - lastMotionTime > debounceDelay)) {
+      lastMotionTime = now;
+      currentMotionTime = lastMotionTime;
+      Serial.println("Motion detected at: " + String(currentMotionTime));
+    }
 
-
-    // ----------- Create JSON Payload -----------
+    // --- Create MQTT JSON Payload ---
     String payload = "{";
     payload += "\"moisture\": " + String(moistureValue) + ",";
     payload += "\"status\": \"" + moistureStatus + "\",";
     payload += "\"humidity\": " + String(humidity) + ",";
     payload += "\"motion\": \"" + motionStatus + "\"";
-    payload += "}";
 
+    if (currentMotionTime > 0) {
+      payload += ",\"motionTime\": " + String(currentMotionTime);
+    }
+
+    payload += "}";
 
     Serial.print("Publishing payload: ");
     Serial.println(payload);
 
-    // ----------- Publish to MQTT -----------
     if (client.publish("sensor/data", payload.c_str())) {
       Serial.println("Message published successfully");
     } else {

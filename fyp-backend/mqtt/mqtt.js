@@ -13,6 +13,7 @@ wss.on('connection', (ws) => {
 
 function setupMqttHandler(wss) {
   const client = mqtt.connect("mqtt://broker.emqx.io");
+  const latestData = {}; // Shared state for latest MQTT data
 
   client.on("connect", () => {
     console.log("✅ MQTT client connected");
@@ -28,10 +29,19 @@ function setupMqttHandler(wss) {
       return;
     }
 
+    const data = JSON.parse(message.toString());
+    // Add growth stage (simplified assumption based on days_since_seed from dataset)
+    data.growth_stage = data.days_since_seed < 30 ? "Seedling" : data.days_since_seed < 60 ? "Growing" : data.days_since_seed < 90 ? "Flowering" : "Fruiting";
+    latestData.growth_stage = data.growth_stage;
+    latestData.waterLevel = parseInt(data.moisture) > 500 ? 40 : 60; // Simplified water level based on moisture
+    latestData.status = data.status;
+    latestData.humidity = data.humidity;
+    latestData.temperature = data.temperature; // Assuming temperature is sent
+
     // Broadcast to all connected WebSocket clients
     wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) { // Corrected from client.OPEN
-        client.send(`${message.toString()}`);
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(latestData));
       }
     });
   });
