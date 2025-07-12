@@ -1,71 +1,153 @@
 #include <ESP8266WiFi.h>
-#include <PubSubClient.h>
-#include <DHT.h>  // For humidity sensor
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <DHT.h>
+#include <ArduinoJson.h>
 
-// ------------------- WiFi & MQTT Configuration -------------------
+// ------------------- WiFi & Server Configuration -------------------
 const char* ssid = "Galaxy A122A41";
 const char* password = "deshan2005";
-const char* mqtt_server = "broker.emqx.io";
+const char* serverUrl = "http://10.79.128.253:3001";  // Backend base URL
 
 // ------------------- Sensor Configuration -------------------
 const int soilMoisturePin = A0;  // Soil moisture sensor
-#define DHTPIN D1
+#define DHTPIN D2
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
-
-#define PIR_PIN D2
+#define PIR_PIN D1
 #define MOTOR_PIN D3
 bool motorState = LOW;
+unsigned long motorStartTime = 0;
+unsigned long pumpDuration = 0;
+bool manualPumpActive = false;
 
-// ------------------- MQTT Setup -------------------
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-// Motion detection debounce
+// ------------------- Motion Detection Debounce -------------------
 unsigned long lastMotionTime = 0;
 const unsigned long debounceDelay = 5000;
 
 // ------------------- WiFi Connection -------------------
 void setup_wifi() {
-  delay(10);
-  Serial.println("Connecting to WiFi...");
+  Serial.begin(115200);
   WiFi.begin(ssid, password);
-
+  Serial.print("Connecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
-  Serial.println("\nWiFi connected");
-  Serial.println("MAC: " + WiFi.macAddress());
+  Serial.println("\nConnected, IP: " + WiFi.localIP().toString());
 }
 
-// ------------------- MQTT Callback -------------------
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("]: ");
-  for (unsigned int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-}
+// ------------------- Send Sensor Data to Backend -------------------
+void sendSensorData(int moistureValue, String moistureStatus, float humidity, String motionStatus, unsigned long motionTime) {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
 
-// ------------------- Reconnect to MQTT -------------------
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP8266-" + WiFi.macAddress();
-
-    if (client.connect(clientId.c_str())) {
-      Serial.println("Connected to MQTT broker");
-      client.subscribe("sensor/device");
-    } else {
-      Serial.print("Failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" — trying again in 5 seconds");
-      delay(5000);
+    // Build JSON payload
+    StaticJsonDocument<200> doc;
+    doc["moisture"] = moistureValue;
+    doc["status"] = moistureStatus;
+    doc["humidity"] = humidity;
+    doc["motion"] = motionStatus;
+    if (motionTime > 0) {
+      doc["motionTime"] = motionTime;
     }
+
+    String payload;
+    serializeJson(doc, payload);
+    Serial.println("Payload: " + payload);
+
+    // Send POST to /data
+    if (http.begin(client, String(serverUrl) + "/data")) {
+      //if (http.begin(client, "http://10.79.128.253:3001/data")) {
+      http.addHeader("Content-Type", "application/json");
+      int code = http.POST(payload);
+      Serial.print("POST code: ");
+      Serial.println(code);
+
+      if (code > 0) {
+        String resp = http.getString();
+        Serial.println("Server reply: " + resp);
+      } else {
+        Serial.println("POST failed: " + http.errorToString(code));
+      }
+      http.end();
+    } else {
+      Serial.println("Unable to connect to server for sending data");
+    }
+  } else {
+    Serial.println("Wi-Fi disconnected");
+  }
+}
+
+// ------------------- Poll Commands from Backend -------------------
+void pollCommands() {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+
+    // Send GET to /get_command
+    if (http.begin(client, String(serverUrl) + "/get_command")) {
+      int code = http.GET();
+      Serial.print("GET code: ");
+      Serial.println(code);
+
+      if (code > 0) {
+        String payload = http.getString();
+        Serial.println("Server reply: " + payload);
+
+        // Parse JSON response
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, payload);
+        if (error) {
+          Serial.print("JSON parsing failed: ");
+          Serial.println(error.c_str());
+          return;
+        }
+
+        // Handle actions
+        String action = doc["action"];
+        if (action == "set_water_level") {
+          String plant_type = doc["plant_type"];
+          String growth_stage = doc["growth_stage"];
+          float water_level = doc["water_level"];
+          pumpDuration = doc["pump_duration"];
+
+          Serial.println("Received manual water level command:");
+          Serial.print("Plant Type: ");
+          Serial.println(plant_type);
+          Serial.print("Growth Stage: ");
+          Serial.println(growth_stage);
+          Serial.print("Water Level: ");
+          Serial.print(water_level);
+          Serial.println("%");
+          Serial.print("Pump Duration: ");
+          Serial.print(pumpDuration);
+          Serial.println("ms");
+
+          // Activate pump
+          digitalWrite(MOTOR_PIN, HIGH);
+          motorState = HIGH;
+          manualPumpActive = true;
+          motorStartTime = millis();
+          Serial.println("Pump turned ON for manual watering");
+        } else if (action == "stop_pump") {
+          digitalWrite(MOTOR_PIN, LOW);
+          motorState = LOW;
+          manualPumpActive = false;
+          pumpDuration = 0;
+          motorStartTime = 0;
+          Serial.println("Pump turned OFF by stop command");
+        }
+      } else {
+        Serial.println("GET failed: " + http.errorToString(code));
+      }
+      http.end();
+    } else {
+      Serial.println("Unable to connect to server for polling commands");
+    }
+  } else {
+    Serial.println("Wi-Fi disconnected");
   }
 }
 
@@ -79,17 +161,17 @@ void setup() {
   pinMode(PIR_PIN, INPUT_PULLUP);
   pinMode(MOTOR_PIN, OUTPUT);
   digitalWrite(MOTOR_PIN, LOW);
-
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
 }
 
 // ------------------- Main Loop -------------------
 void loop() {
-  if (!client.connected()) {
-    reconnect();
+  // Handle manual pump duration
+  if (manualPumpActive && (millis() - motorStartTime >= pumpDuration)) {
+    digitalWrite(MOTOR_PIN, LOW);
+    motorState = LOW;
+    manualPumpActive = false;
+    Serial.println("Pump turned OFF after manual watering");
   }
-  client.loop();
 
   static unsigned long lastMsg = 0;
   unsigned long now = millis();
@@ -98,8 +180,12 @@ void loop() {
     lastMsg = now;
 
     // --- Read Soil Moisture ---
-    int moistureValue = analogRead(soilMoisturePin);
-    bool isMoistureLow = (moistureValue < 200);  // Adjust threshold as needed
+    int moistureValue = analogRead(A0);
+    if (moistureValue > 99) {
+      moistureValue = moistureValue / pow(10, (int)log10(moistureValue) - 1);  // Keep 2 most significant digits
+    }
+    Serial.println(moistureValue);
+    bool isMoistureLow = (moistureValue < 43);  // Dry if reading < 200 (adjust threshold if needed)
     String moistureStatus = isMoistureLow ? "Dry" : "Wet";
 
     Serial.print("Soil Moisture: ");
@@ -107,20 +193,34 @@ void loop() {
     Serial.print(" => Status: ");
     Serial.println(moistureStatus);
 
-    // --- Motor Control ---
-    if (moistureStatus == "Wet" ) {
-      digitalWrite(MOTOR_PIN, HIGH);  // Turn motor ON
-      Serial.println("Motor OFF - Soil is WET");;
+    if (moistureStatus == "Dry") {
+      digitalWrite(MOTOR_PIN, LOW);
+      Serial.println("Motor is on, Water level is Low");
     } else {
-      digitalWrite(MOTOR_PIN, LOW);  // Turn motor OFF
-      Serial.println("Motor ON - Soil is DRY");
+      digitalWrite(MOTOR_PIN, HIGH);
+      Serial.println("Motor is off, Water level is High");
     }
+
+    // --- Automatic Motor Control (only if not in manual mode) ---
+    // if (!manualPumpActive) {
+    //   if (isMoistureLow) {
+    //     digitalWrite(MOTOR_PIN, HIGH);
+    //     motorState = HIGH;
+    //     Serial.println("Motor ON - Soil is DRY (automatic mode)");
+    //   } else {
+    //     digitalWrite(MOTOR_PIN, LOW);
+    //     motorState = LOW;
+    //     Serial.println("Motor OFF - Soil is WET (automatic mode)");
+    //   }
+    // } else {
+    //   Serial.println("Manual mode active - automatic control disabled");
+    // }
 
     // --- Read Humidity ---
     float humidity = dht.readHumidity();
     if (isnan(humidity)) {
       Serial.println("Failed to read from DHT sensor!");
-      return;
+      // return;
     }
     Serial.print("Humidity: ");
     Serial.print(humidity);
@@ -137,26 +237,8 @@ void loop() {
       Serial.println("Motion detected at: " + String(currentMotionTime));
     }
 
-    // --- Create MQTT JSON Payload ---
-    String payload = "{";
-    payload += "\"moisture\": " + String(moistureValue) + ",";
-    payload += "\"status\": \"" + moistureStatus + "\",";
-    payload += "\"humidity\": " + String(humidity) + ",";
-    payload += "\"motion\": \"" + motionStatus + "\"";
-
-    if (currentMotionTime > 0) {
-      payload += ",\"motionTime\": " + String(currentMotionTime);
-    }
-
-    payload += "}";
-
-    Serial.print("Publishing payload: ");
-    Serial.println(payload);
-
-    if (client.publish("sensor/data", payload.c_str())) {
-      Serial.println("Message published successfully");
-    } else {
-      Serial.println("Message publish failed");
-    }
+    // --- Send Sensor Data and Poll Commands ---
+    sendSensorData(moistureValue, moistureStatus, humidity, motionStatus, currentMotionTime);
+    pollCommands();
   }
 }

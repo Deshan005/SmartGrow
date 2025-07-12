@@ -10,7 +10,7 @@ export default function UserDetails() {
     const fetchUserDetails = async () => {
       if (!token) return navigate('/login');
       try {
-        const response = await fetch('http://localhost:5000/user-details', {
+        const response = await fetch('http://localhost:3001/user-details', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();

@@ -50,7 +50,7 @@ export default function Home() {
 
   const autoSetWaterLevel = async () => {
     if (!token) return navigate('/login');
-    const response = await fetch('http://localhost:5000/predict_water_level', {
+    const response = await fetch('http://localhost:3001/predict_water_level', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,7 +65,7 @@ export default function Home() {
     });
     const data = await response.json();
     if (data.water_level) {
-      await fetch('http://localhost:5000/setWaterLevel', {
+      await fetch('http://localhost:3001/setWaterLevel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
