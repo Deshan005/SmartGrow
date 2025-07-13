@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const mysql = require('mysql2');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
+const WebSocket = require('ws');
 
 const app = express();
 app.use(express.json());
@@ -49,8 +50,41 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Store the latest command for ESP8266
+// Store the latest command and mode for ESP8266
 let latestCommand = null;
+let systemMode = 'automatic'; // Default to automatic mode
+
+// Create WebSocket server on port 5001
+const wss = new WebSocket.Server({ port: 5001 });
+console.log('WebSocket server running on ws://localhost:5001');
+
+wss.on('connection', (ws) => {
+  console.log('WebSocket client connected');
+  ws.on('close', () => console.log('WebSocket client disconnected'));
+});
+
+// Broadcast function to send data to all connected WebSocket clients
+function broadcastSensorData(data) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
+
+// Set mode endpoint
+app.post('/set_mode', verifyToken, (req, res) => {
+  const { mode } = req.body;
+  if (!['automatic', 'manual'].includes(mode)) {
+    return res.status(400).json({ error: 'Invalid mode. Use "automatic" or "manual".' });
+  }
+  systemMode = mode;
+  console.log(`System mode set to: ${mode}`);
+  if (mode === 'automatic') {
+    latestCommand = null; // Clear any manual command when switching to automatic
+  }
+  res.json({ success: true, mode });
+});
 
 // Signup endpoint
 app.post('/signup', async (req, res) => {
@@ -107,25 +141,34 @@ app.get('/user-details', verifyToken, (req, res) => {
 
 // Sensor data endpoint (log to terminal only)
 app.post('/data', (req, res) => {
-    console.log(req.body);
-  const { moisture, status, humidity, motion, motionTime } = req.body;
+  const { moisture, status, humidity } = req.body;
   console.log('Received sensor data:');
   console.log(`  Moisture: ${moisture}`);
   console.log(`  Status: ${status}`);
   console.log(`  Humidity: ${humidity}`);
-  console.log(`  Motion: ${motion}`);
-  console.log(`  Motion Time: ${motionTime || 'N/A'}`);
+
+  // Map ESP data to Home.js expected format
+  const wsData = {
+    waterLevel: moisture, // Map moisture to waterLevel
+    status: status,
+    humidity: humidity || null,
+    height: 0, // Placeholder (not provided by ESP)
+    temperature: 25, // Placeholder (not provided by ESP)
+    growth_stage: 'Unknown' // Placeholder (not provided by ESP)
+  };
+
+  // Broadcast to WebSocket clients
+  broadcastSensorData(wsData);
+
   res.json({ success: true });
 });
 
 // Get command endpoint for ESP8266
 app.get('/get_command', (req, res) => {
-  if (latestCommand) {
-    res.json(latestCommand);
-    latestCommand = null; // Clear command after sending
-  } else {
-    res.json({ action: 'none' });
-  }
+  res.json({
+    mode: systemMode,
+    command: latestCommand || { action: 'none' }
+  });
 });
 
 // Manual water level endpoint
@@ -135,6 +178,7 @@ app.post('/manual_set_water_level', verifyToken, async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   try {
+    systemMode = 'manual'; // Switch to manual mode
     const pumpDuration = Math.round(water_level * 100); // Convert to ms
     latestCommand = {
       action: 'set_water_level',
@@ -152,6 +196,7 @@ app.post('/manual_set_water_level', verifyToken, async (req, res) => {
 // Stop pump endpoint
 app.post('/stop_pump', verifyToken, async (req, res) => {
   try {
+    systemMode = 'manual'; // Ensure manual mode
     latestCommand = { action: 'stop_pump' };
     res.json({ success: true, message: 'Pump stop command sent' });
   } catch (err) {
