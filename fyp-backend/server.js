@@ -62,7 +62,7 @@ const verifyToken = (req, res, next) => {
 
 // Store the latest command and mode for ESP8266
 let latestCommand = null;
-let systemMode = 'automatic'; // Default to automatic mode
+let systemMode = 'automatic';
 
 // Create WebSocket server on port 5001
 const wss = new WebSocket.Server({ port: 5001 });

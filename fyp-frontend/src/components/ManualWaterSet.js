@@ -11,13 +11,13 @@ export default function ManualWaterSet() {
   const [loading, setLoading] = useState(true);
   const [isPumpRunning, setIsPumpRunning] = useState(false);
   const [waterLevelDisplay, setWaterLevelDisplay] = useState("Select crop and growth stage");
-  const [waterAmount, setWaterAmount] = useState(null); // Water amount in milliliters
-  const [pumpTime, setPumpTime] = useState(null); // Pumping time in seconds
-  const [isSubmitting, setIsSubmitting] = useState(false); // Loading state for server requests
-  const [pumpStartTime, setPumpStartTime] = useState(null); // Timestamp when pump starts
+  const [waterAmount, setWaterAmount] = useState(null); 
+  const [pumpTime, setPumpTime] = useState(null); 
+  const [isSubmitting, setIsSubmitting] = useState(false); 
+  const [pumpStartTime, setPumpStartTime] = useState(null); 
 
   // Constants
-  const FLOW_RATE = 2500; // mL per minute (average of 2000-3000 mL/min)
+  const FLOW_RATE = 2500; // mL per minute
   const MAX_VOLUME = 500; // 100% water level = 500 mL (0.5 liter)
 
   // Set manual mode on component mount
