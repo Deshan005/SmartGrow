@@ -31,7 +31,7 @@ export default function Login() {
         return;
       }
 
-      localStorage.setItem('token', data.token); // Store JWT token
+      localStorage.setItem('token', data.token);
       navigate("/home");
     } catch (error) {
       setErrorMessage("An error occurred during login.");
@@ -41,21 +41,22 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-black relative">
+    <div className="relative min-h-screen">
       <img
         src="https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?q=80&w=1920"
         alt="background"
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover z-0"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black opacity-70"></div>
-      <div className="flex items-center justify-center min-h-screen p-6 pt-36 pb-10 relative z-10">
-        <div className="text-center">
-          <h1 className="text-4xl text-white font-bold mb-2 shadow-md">Login</h1>
-          <p className="text-base text-gray-300 font-normal mb-7">Welcome back to protect your crops</p>
-          <form onSubmit={handleLogin} className="mb-5">
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-6 bg-white/0 backdrop-blur-md">
+        <div className="w-full max-w-md bg-white/50 rounded-xl shadow-2xl p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-800">Login</h1>
+            <p className="text-gray-600 mt-2">Welcome back to protect your crops</p>
+          </div>
+          <form onSubmit={handleLogin}>
             <input
               type="text"
-              className="w-full bg-white bg-opacity-10 text-white rounded-2xl p-3 mb-4 text-base font-normal shadow-md"
+              className="w-full mb-4 px-4 py-3 rounded-lg text-gray-800 bg-white border shadow-inner focus:outline-none focus:ring-2 focus:ring-green-400"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -63,7 +64,7 @@ export default function Login() {
             />
             <input
               type="password"
-              className="w-full bg-white bg-opacity-10 text-white rounded-2xl p-3 mb-4 text-base font-normal shadow-md"
+              className="w-full mb-4 px-4 py-3 rounded-lg text-gray-800 bg-white border shadow-inner focus:outline-none focus:ring-2 focus:ring-green-400"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -71,16 +72,21 @@ export default function Login() {
             />
             <button
               type="submit"
-              className={`w-full bg-green-600 p-4 rounded-2xl text-white text-lg font-semibold shadow-lg ${loading ? 'bg-green-700 opacity-70' : ''}`}
               disabled={loading}
+              className={`w-full py-3 rounded-lg font-semibold text-white shadow-lg transition duration-200 ${loading ? "bg-green-700 opacity-70" : "bg-green-600 hover:bg-green-700"}`}
             >
-              {loading ? <span className="loading loading-spinner"></span> : "Log In"}
+              {loading ? "Logging in..." : "Log In"}
             </button>
           </form>
-          {errorMessage && <p className="text-red-400 text-base font-semibold mt-2">{errorMessage}</p>}
-          <div className="flex justify-center mt-5">
-            <p className="text-gray-300 text-base font-normal">Don't have an account? </p>
-            <button onClick={() => navigate("/signup")} className="text-green-400 text-base font-semibold underline ml-1">
+          {errorMessage && (
+            <p className="text-red-500 text-center text-sm mt-4">{errorMessage}</p>
+          )}
+          <div className="flex justify-center mt-6 text-sm text-gray-700">
+            <p>Don't have an account?</p>
+            <button
+              onClick={() => navigate("/signup")}
+              className="ml-1 text-green-600 font-semibold hover:underline"
+            >
               Sign up
             </button>
           </div>

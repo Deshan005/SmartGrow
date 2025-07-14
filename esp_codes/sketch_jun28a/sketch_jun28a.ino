@@ -19,7 +19,7 @@ bool motorState = LOW;
 unsigned long motorStartTime = 0;
 unsigned long pumpDuration = 0;
 bool manualPumpActive = false;
-String systemMode = "automatic"; // Default to automatic mode
+String systemMode = "automatic";
 
 // ------------------- WiFi Connection -------------------
 void setup_wifi() {
@@ -179,10 +179,11 @@ void loop() {
     // --- Read Soil Moisture ---
     int moistureValue = analogRead(A0);
     if (moistureValue > 99) {
-      moistureValue = moistureValue / pow(10, (int)log10(moistureValue) - 1);  // Keep 2 most significant digits
+      // Keep 2 most significant digits
+      moistureValue = moistureValue / pow(10, (int)log10(moistureValue) - 1);  
     }
     Serial.println(moistureValue);
-    bool isMoistureLow = (moistureValue < 43);  // Dry if reading < 43 (adjust threshold if needed)
+    bool isMoistureLow = (moistureValue < 43);
     String moistureStatus = isMoistureLow ? "Dry" : "Wet";
 
     Serial.print("Soil Moisture: ");

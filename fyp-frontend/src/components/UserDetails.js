@@ -38,9 +38,15 @@ export default function UserDetails() {
   if (!user) return <div className="text-center mt-10 text-gray-600">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <div className="max-w-2xl mx-auto text-center">
-        <div className="bg-white p-6 rounded-lg shadow-md">
+    <div className="relative min-h-screen">
+      <img
+        src="https://images.unsplash.com/photo-1508857650881-64475119d798?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+        alt="background"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+      />
+    <div className="relative z-10 min-h-screen flex items-center justify-center bg-transparent p-6 bg-white/20 backdrop-blur-md">
+      <div className="relative z-10 w-full max-w-2xl px-4 ">
+        <div className="bg-white/90 p-6 rounded-lg shadow-md text-center">
           <h1 className="text-3xl font-bold text-gray-800 mb-4">User Profile</h1>
           <p className="text-xl text-gray-700 mb-2">Username: {user.username}</p>
           <p className="text-lg text-gray-600 mb-2">Email: {user.email}</p>
@@ -61,6 +67,7 @@ export default function UserDetails() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

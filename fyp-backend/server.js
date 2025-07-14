@@ -18,21 +18,31 @@ const db = mysql.createConnection({
 });
 
 db.connect((err) => {
- if (err) throw err;
- console.log('Connected to MySQL Database');
- // Create users table
- db.query(`
-   CREATE TABLE IF NOT EXISTS users (
-     id INT AUTO_INCREMENT PRIMARY KEY,
-     username VARCHAR(50) UNIQUE NOT NULL,
-     email VARCHAR(100) UNIQUE NOT NULL,
-     password VARCHAR(255) NOT NULL,
-     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-   )`, (err) => {
-     if (err) throw err;
-     console.log('Users table ready');
-   });
+  if (err) {
+    console.error('Database connection failed:', err.message);
+    return;
+  }
+  console.log('Connected to MySQL Database');
+
+  const createUsersTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      email VARCHAR(100) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  db.query(createUsersTableQuery, (err) => {
+    if (err) {
+      console.error('Failed to create users table:', err.message);
+    } else {
+      console.log('Users table ready');
+    }
+  });
 });
+
 
 // JWT Secret
 const JWT_SECRET = 'fyp';

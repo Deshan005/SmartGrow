@@ -7,8 +7,6 @@ export default function Signup() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const handleSignup = async (e) => {
@@ -19,25 +17,25 @@ export default function Signup() {
     }
 
     setLoading(true);
-    setShowSuccess(false);
     setErrorMessage("");
 
     try {
-      const response = await fetch('http://localhost:3001/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("http://localhost:3001/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, username, password }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        setErrorMessage(data.error || 'Signup failed');
+        setErrorMessage(data.error || "Signup failed");
         return;
       }
 
-      setSuccessMessage("User has been created successfully");
-      setShowSuccess(true);
-
+      // Store JWT token if returned (optional, depending on backend)
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
       setTimeout(() => {
         navigate("/login");
       }, 1000);
@@ -49,21 +47,22 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-black relative">
+    <div className="relative min-h-screen">
       <img
         src="https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?q=80&w=1920"
         alt="background"
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover z-0"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black opacity-70"></div>
-      <div className="flex items-center justify-center min-h-screen p-6 pt-36 pb-10 relative z-10">
-        <div className="text-center">
-          <h1 className="text-4xl text-white font-bold mb-2 shadow-md">Create Account</h1>
-          <p className="text-base text-gray-300 font-normal mb-7">Join us to start protecting your crops</p>
-          <form onSubmit={handleSignup} className="mb-5">
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-6 bg-white/0 backdrop-blur-md">
+        <div className="w-full max-w-md bg-white/50 rounded-xl shadow-2xl p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-800">Sign Up</h1>
+            <p className="text-gray-600 mt-2">Join us to protect your crops</p>
+          </div>
+          <form onSubmit={handleSignup}>
             <input
               type="email"
-              className="w-full bg-white bg-opacity-10 text-white rounded-2xl p-3 mb-4 text-base font-normal shadow-md"
+              className="w-full mb-4 px-4 py-3 rounded-lg text-gray-800 bg-white border shadow-inner focus:outline-none focus:ring-2 focus:ring-green-400"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -71,7 +70,7 @@ export default function Signup() {
             />
             <input
               type="text"
-              className="w-full bg-white bg-opacity-10 text-white rounded-2xl p-3 mb-4 text-base font-normal shadow-md"
+              className="w-full mb-4 px-4 py-3 rounded-lg text-gray-800 bg-white border shadow-inner focus:outline-none focus:ring-2 focus:ring-green-400"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -80,7 +79,7 @@ export default function Signup() {
             />
             <input
               type="password"
-              className="w-full bg-white bg-opacity-10 text-white rounded-2xl p-3 mb-4 text-base font-normal shadow-md"
+              className="w-full mb-4 px-4 py-3 rounded-lg text-gray-800 bg-white border shadow-inner focus:outline-none focus:ring-2 focus:ring-green-400"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -88,18 +87,23 @@ export default function Signup() {
             />
             <button
               type="submit"
-              className={`w-full bg-green-600 p-4 rounded-2xl text-white text-lg font-semibold shadow-lg ${loading ? 'bg-green-700 opacity-70' : ''}`}
               disabled={loading}
+              className={`w-full py-3 rounded-lg font-semibold text-white shadow-lg transition duration-200 ${loading ? "bg-green-700 opacity-70" : "bg-green-600 hover:bg-green-700"}`}
             >
-              {loading ? <span className="loading loading-spinner"></span> : "Sign Up"}
+              {loading ? "Signing up..." : "Sign Up"}
             </button>
           </form>
-          {errorMessage && <p className="text-red-400 text-base font-semibold mt-2">{errorMessage}</p>}
-          {showSuccess && <p className="text-green-400 text-xl font-semibold mt-4 animate-pulse">{successMessage}</p>}
-          <div className="flex justify-center mt-5">
-            <p className="text-gray-300 text-base font-normal">Already have an account? </p>
-            <button onClick={() => navigate("/login")} className="text-green-400 text-base font-semibold underline ml-1">
-              Log in
+          {errorMessage && (
+            <p className="text-red-500 text-center text-sm mt-4">{errorMessage}</p>
+          )}
+          <div className="flex justify-center mt-6 text-sm text-gray-700">
+            <p>Already have an account?</p>
+            <button
+              onClick={() => navigate("/login")}
+              className="ml-1 text-green-600 font-semibold hover:underline"
+              disabled={loading}
+            >
+              Log In
             </button>
           </div>
         </div>

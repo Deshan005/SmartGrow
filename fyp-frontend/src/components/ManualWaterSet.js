@@ -18,7 +18,7 @@ export default function ManualWaterSet() {
 
   // Constants
   const FLOW_RATE = 2500; // mL per minute (average of 2000-3000 mL/min)
-  const MAX_VOLUME = 1000; // 100% water level = 1000 mL (1 liter)
+  const MAX_VOLUME = 500; // 100% water level = 500 mL (0.5 liter)
 
   // Set manual mode on component mount
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function ManualWaterSet() {
       setWaterLevelDisplay(`${waterLevel}%`);
       const waterMilliliters = (waterLevel / 100) * MAX_VOLUME; // Convert percentage to mL
       const timeMinutes = waterMilliliters / FLOW_RATE; // Time in minutes
-      const timeSeconds = timeMinutes * 60; // Convert to seconds
+      const timeSeconds = timeMinutes * 60*2; // Convert to seconds
       setWaterAmount(waterMilliliters.toFixed(2));
       setPumpTime(timeSeconds.toFixed(2));
     }
@@ -220,12 +220,18 @@ export default function ManualWaterSet() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Manual Water Level Set</h1>
-        <p className="text-gray-600 mt-2">Set water level for testing</p>
+    <div className="relative min-h-screen">
+      <img
+        src="https://images.unsplash.com/photo-1508857650881-64475119d798?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+        alt="background"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+      />
+    <div className="relative z-10 min-h-screen flex items-center justify-center bg-transparent p-6 bg-white/20 backdrop-blur-md">
+      <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md ">
+        <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-black">Manual Water Level Set</h1>
+        <p className="text-black-200 mt-2">Set water level for testing</p>
       </div>
-      <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
         <div className="mb-4">
           <label className="block text-gray-700 text-lg mb-2">Plant Type</label>
           <select
@@ -285,6 +291,7 @@ export default function ManualWaterSet() {
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 }
