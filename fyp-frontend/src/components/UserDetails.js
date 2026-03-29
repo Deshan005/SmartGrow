@@ -46,21 +46,22 @@ export default function UserDetails() {
       />
     <div className="relative z-10 min-h-screen flex items-center justify-center bg-transparent p-6 bg-white/20 backdrop-blur-md">
       <div className="relative z-10 w-full max-w-2xl px-4 ">
-        <div className="bg-white/90 p-6 rounded-lg shadow-md text-center">
+        <div className="bg-white/90 p-6 rounded-lg shadow-md text-center max-w-sm mx-auto w-full mb-6">
           <h1 className="text-3xl font-bold text-gray-800 mb-4">User Profile</h1>
           <p className="text-xl text-gray-700 mb-2">Username: {user.username}</p>
           <p className="text-lg text-gray-600 mb-2">Email: {user.email}</p>
           <p className="text-lg text-gray-600 mb-4">Joined: {user.joinDate}</p>
-          <div className="flex justify-center space-x-4 mt-4">
+          
+          <div className="flex justify-center space-x-4 mt-6">
             <button
               onClick={() => navigate('/home')}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-blue-700 transition duration-200"
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-blue-700 transition duration-200 w-full"
             >
-              Back to Home
+              Dashboard
             </button>
             <button
               onClick={handleLogout}
-              className="bg-red-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-red-700 transition duration-200"
+              className="bg-red-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-red-700 transition duration-200 w-full"
             >
               Logout
             </button>

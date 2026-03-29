@@ -5,9 +5,10 @@
 #include <ArduinoJson.h>
 
 // ------------------- WiFi & Server Configuration -------------------
-const char* ssid = "Galaxy A122A41";
-const char* password = "deshan2005";
-const char* serverUrl = "http://10.79.128.253:3001";  // Backend base URL
+const char* ssid = "Dialog 4G 605";
+const char* password = "AAB53B59";
+const char* serverUrl = "http://192.168.8.143:3001";  // Backend base URL
+// const char* serverUrl = "http://10.79.128.253:3001";  Backend base URL
 
 // ------------------- Sensor Configuration -------------------
 const int soilMoisturePin = A0;  // Soil moisture sensor
@@ -15,11 +16,12 @@ const int soilMoisturePin = A0;  // Soil moisture sensor
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 #define MOTOR_PIN D3
-bool motorState = LOW;
+bool motorState = HIGH;
 unsigned long motorStartTime = 0;
 unsigned long pumpDuration = 0;
 bool manualPumpActive = false;
-String systemMode = "automatic";
+String systemMode = "standby";
+float targetMoisture = 100.0;
 
 // ------------------- WiFi Connection -------------------
 void setup_wifi() {
@@ -40,10 +42,11 @@ void sendSensorData(int moistureValue, String moistureStatus, float humidity) {
     HTTPClient http;
 
     // Build JSON payload
-    StaticJsonDocument<200> doc;
+    StaticJsonDocument<256> doc;
     doc["moisture"] = moistureValue;
     doc["status"] = moistureStatus;
     doc["humidity"] = humidity;
+    doc["pumpState"] = (motorState == LOW) ? "ON" : "OFF";
 
     String payload;
     serializeJson(doc, payload);
@@ -87,8 +90,8 @@ void pollCommands() {
         String payload = http.getString();
         Serial.println("Server reply: " + payload);
 
-        // Parse JSON response
-        StaticJsonDocument<200> doc;
+        // Parse JSON response - buffer must be large enough for full cron command payload
+        StaticJsonDocument<512> doc;
         DeserializationError error = deserializeJson(doc, payload);
         if (error) {
           Serial.print("JSON parsing failed: ");
@@ -103,38 +106,48 @@ void pollCommands() {
 
         // Handle commands (only in manual mode)
         if (systemMode == "manual") {
-          String action = doc["command"]["action"];
-          if (action == "set_water_level") {
-            String plant_type = doc["command"]["plant_type"];
-            String growth_stage = doc["command"]["growth_stage"];
-            float water_level = doc["command"]["water_level"];
-            pumpDuration = doc["command"]["pump_duration"];
+          String action = doc["command"]["action"].as<String>();
+          String commandIdStr = doc["command"]["id"].as<String>();
+          static String lastCommandIdStr = "";
 
-            Serial.println("Received manual water level command:");
-            Serial.print("Plant Type: ");
-            Serial.println(plant_type);
-            Serial.print("Growth Stage: ");
-            Serial.println(growth_stage);
-            Serial.print("Water Level: ");
-            Serial.print(water_level);
-            Serial.println("%");
-            Serial.print("Pump Duration: ");
-            Serial.print(pumpDuration);
-            Serial.println("ms");
-
-            // Activate pump
-            digitalWrite(MOTOR_PIN, LOW);
-            motorState = LOW;
-            manualPumpActive = true;
-            motorStartTime = millis();
-            Serial.println("Pump turned ON for manual watering");
-          } else if (action == "stop_pump") {
+          // EMERGENCY OVERRIDE: Stop pump unconditionally
+          if (action == "stop_pump") {
             digitalWrite(MOTOR_PIN, HIGH);
             motorState = HIGH;
             manualPumpActive = false;
             pumpDuration = 0;
             motorStartTime = 0;
-            Serial.println("Pump turned OFF by stop command");
+            Serial.println("Pump turned OFF by absolute emergency stop command");
+          } 
+          // Process other commands only once natively
+          else if (commandIdStr != "" && commandIdStr != "null" && commandIdStr != lastCommandIdStr) {
+            lastCommandIdStr = commandIdStr;
+
+            if (action == "set_water_level") {
+              String plant_type = doc["command"]["plant_type"].as<String>();
+              String growth_stage = doc["command"]["growth_stage"].as<String>();
+              float water_level = doc["command"]["water_level"].as<float>();
+              targetMoisture = water_level; // Save for safety stop
+              pumpDuration = doc["command"]["pump_duration"].as<unsigned long>();
+              Serial.print("Target Moiture Level: ");
+              Serial.println(targetMoisture);
+              Serial.print("Pump Duration from cron: ");
+              Serial.println(pumpDuration);
+
+              // Activate pump
+              digitalWrite(MOTOR_PIN, LOW);
+              motorState = LOW;
+              manualPumpActive = true;
+              motorStartTime = millis();
+              Serial.println("Pump turned ON for manual watering via tracking ID");
+            } else if (action == "start_pump") {
+              digitalWrite(MOTOR_PIN, LOW);
+              motorState = LOW;
+              manualPumpActive = true;
+              pumpDuration = 4294967295; // Infinite duration, manually stopped
+              motorStartTime = millis();
+              Serial.println("Pump turned ON universally by start command");
+            }
           }
         }
       } else {
@@ -157,37 +170,59 @@ void setup() {
 
   pinMode(soilMoisturePin, INPUT);
   pinMode(MOTOR_PIN, OUTPUT);
-  digitalWrite(MOTOR_PIN, LOW);
+  digitalWrite(MOTOR_PIN, HIGH);
+  motorState = HIGH;
 }
 
-// ------------------- Main Loop -------------------
 void loop() {
-  // Handle manual pump duration
-  if (manualPumpActive && (millis() - motorStartTime >= pumpDuration)) {
-    digitalWrite(MOTOR_PIN, LOW);
-    motorState = LOW;
-    manualPumpActive = false;
-    Serial.println("Pump turned OFF after manual watering");
-  }
-
   static unsigned long lastMsg = 0;
   unsigned long now = millis();
+
+  // --- Global Soil Moisture Reading ---
+  int moistureValue = analogRead(A0);
+  int currentMoisture = moistureValue;
+  if (currentMoisture > 99) {
+    currentMoisture = currentMoisture / pow(10, (int)log10(currentMoisture) - 1);
+  }
+
+  // Handle manual/automation pump duration and safety threshold
+  if (manualPumpActive) {
+    // DIAGNOSTIC LOG (every 1 second while pumping)
+    static unsigned long lastPumpLog = 0;
+    if (now - lastPumpLog > 1000) {
+      lastPumpLog = now;
+      Serial.print("🛠️ [PUMPING] Current: ");
+      Serial.print(currentMoisture);
+      Serial.print("% | Target: ");
+      Serial.print(targetMoisture);
+      Serial.println("%");
+    }
+
+    // STOP IF: Timer expires OR Soil moisture passes target
+    if ((now - motorStartTime >= pumpDuration) || (currentMoisture >= targetMoisture)) {
+      digitalWrite(MOTOR_PIN, HIGH);
+      motorState = HIGH;
+      manualPumpActive = false;
+      Serial.print("🛑 Pump OFF. Trigger: ");
+      if (currentMoisture >= targetMoisture) {
+         Serial.print("Target Moisture (");
+         Serial.print(targetMoisture);
+         Serial.println(") reached.");
+      } else {
+         Serial.println("Watering Duration Timeout.");
+      }
+    }
+  }
 
   if (now - lastMsg > 3000) {
     lastMsg = now;
 
-    // --- Read Soil Moisture ---
-    int moistureValue = analogRead(A0);
-    if (moistureValue > 99) {
-      // Keep 2 most significant digits
-      moistureValue = moistureValue / pow(10, (int)log10(moistureValue) - 1);  
-    }
-    Serial.println(moistureValue);
-    bool isMoistureLow = (moistureValue < 43);
+    // --- Read Soil Moisture Status ---
+    bool isMoistureLow = (currentMoisture < 43);
     String moistureStatus = isMoistureLow ? "Dry" : "Wet";
 
     Serial.print("Soil Moisture: ");
-    Serial.print(moistureValue);
+    Serial.print(currentMoisture);
     Serial.print(" => Status: ");
     Serial.println(moistureStatus);
 
@@ -204,6 +239,8 @@ void loop() {
       }
     } else if (systemMode == "manual") {
       Serial.println("Manual mode active - automatic control disabled");
+    } else if (systemMode == "standby") {
+      Serial.println("Standby mode active - waiting for user command...");
     }
 
     // --- Read Humidity ---
@@ -216,7 +253,7 @@ void loop() {
     Serial.println(" %");
 
     // --- Send Sensor Data and Poll Commands ---
-    sendSensorData(moistureValue, moistureStatus, humidity);
+    sendSensorData(currentMoisture, moistureStatus, humidity);
     pollCommands();
   }
 }

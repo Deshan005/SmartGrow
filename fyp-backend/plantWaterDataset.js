@@ -1,4 +1,4 @@
-export const plantWaterDataset = [
+module.exports = [
   {'growth_stage': 'Fruiting', 'plant_type': 'Chilli', 'height_cm': 52.57960621774133, 'temperature_c': 28.979877262955547, 'humidity_percent': 54.6805592132731, 'days_since_seed': 85.56428757689245, 'water_level_percent': 51.55994520336203},
   {'growth_stage': 'Flowering', 'plant_type': 'Chilli', 'height_cm': 32.0501755284444, 'temperature_c': 30.621088666940683, 'humidity_percent': 50.61753482887407, 'days_since_seed': 77.95585311974416, 'water_level_percent': 54.699098521619945},
   {'growth_stage': 'Growing', 'plant_type': 'Brinjal', 'height_cm': 15.000373196390534, 'temperature_c': 22.751067647801506, 'humidity_percent': 59.12726728878613, 'days_since_seed': 21.233911067827616, 'water_level_percent': 45.24756431632238},

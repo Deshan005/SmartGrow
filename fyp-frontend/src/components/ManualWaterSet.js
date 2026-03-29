@@ -15,6 +15,7 @@ export default function ManualWaterSet() {
   const [pumpTime, setPumpTime] = useState(null); 
   const [isSubmitting, setIsSubmitting] = useState(false); 
   const [pumpStartTime, setPumpStartTime] = useState(null); 
+  const [espConnected, setEspConnected] = useState('loading');
 
   // Constants
   const FLOW_RATE = 2500; // mL per minute
@@ -25,7 +26,7 @@ export default function ManualWaterSet() {
     const setManualMode = async () => {
       if (!token) return navigate("/login");
       try {
-        const response = await fetch("http://192.168.56.1:3001/set_mode", {
+        const response = await fetch("http://localhost:3001/set_mode", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -33,6 +34,11 @@ export default function ManualWaterSet() {
           },
           body: JSON.stringify({ mode: "manual" }),
         });
+        if (response.status === 401) {
+          localStorage.removeItem("token");
+          navigate("/login");
+          return;
+        }
         const data = await response.json();
         if (!data.success) {
           console.error("Failed to set manual mode:", data.error);
@@ -44,6 +50,44 @@ export default function ManualWaterSet() {
       }
     };
     setManualMode();
+
+    const ws = new WebSocket('ws://localhost:5001');
+    ws.onopen = () => console.log('WebSocket Connected');
+
+    let connectionTimeout;
+    const resetConnectionTimeout = () => {
+      clearTimeout(connectionTimeout);
+      setEspConnected(true);
+      connectionTimeout = setTimeout(() => {
+        setEspConnected(false); // No data received for 10 seconds
+      }, 10000);
+    };
+
+    // Start initial timeout
+    connectionTimeout = setTimeout(() => {
+      setEspConnected(false);
+    }, 10000);
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data.trim());
+        if (data.pumpState) {
+          setIsPumpRunning(data.pumpState === "ON");
+        }
+        resetConnectionTimeout(); // We got regular data!
+      } catch (err) {
+        console.warn('⚠️ Received non-JSON message:', event.data);
+      }
+    };
+
+    ws.onerror = (error) => console.log('WebSocket Error:', error);
+    ws.onclose = () => console.log('WebSocket Disconnected');
+    
+    return () => {
+      ws.close();
+      clearTimeout(connectionTimeout);
+    };
+
   }, [token, navigate]);
 
   // Clean and load dataset
@@ -95,10 +139,10 @@ export default function ManualWaterSet() {
         }, pumpTimeMs - elapsedTimeMs);
       }
     }
-    return () => clearTimeout(timer); // Cleanup timer on unmount or state change
+    return () => clearTimeout(timer);
   }, [isPumpRunning, pumpStartTime, pumpTime]);
 
-  // Find average water level for selected plant type and growth stage
+  // Average water level for selected plant type and growth stage
   const findWaterLevel = () => {
     if (plantType === "Select" || growthStage === "Select") return 0;
     const matchingRows = dataset.filter(
@@ -128,7 +172,7 @@ export default function ManualWaterSet() {
       setIsSubmitting(true);
       const waterLevel = findWaterLevel();
       const pumpDurationMs = (pumpTime * 1000).toFixed(0); // Convert seconds to milliseconds
-      const response = await fetch("http://192.168.56.1:3001/manual_set_water_level", {
+      const response = await fetch("http://localhost:3001/manual_set_water_level", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -141,6 +185,11 @@ export default function ManualWaterSet() {
           pump_duration_ms: parseInt(pumpDurationMs),
         }),
       });
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
       const data = await response.json();
       if (data.success) {
         alert(`Water level set to ${waterLevel}% (${waterAmount} mL) for ${plantType} at ${growthStage} stage. Pump activated for ${pumpTime} seconds.`);
@@ -163,13 +212,18 @@ export default function ManualWaterSet() {
 
     try {
       setIsSubmitting(true);
-      const response = await fetch("http://192.168.56.1:3001/stop_pump", {
+      const response = await fetch("http://localhost:3001/stop_pump", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
       });
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
       const data = await response.json();
       if (data.success) {
         alert("Pump stopped successfully.");
@@ -186,29 +240,34 @@ export default function ManualWaterSet() {
     }
   };
 
-  // Set automatic mode when navigating back to home
+  // Set standby mode when navigating back to home
   const handleBackToHome = async () => {
     if (!token) return navigate("/login");
     try {
       setIsSubmitting(true);
-      const response = await fetch("http://192.168.56.1:3001/set_mode", {
+      const response = await fetch("http://localhost:3001/set_mode", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ mode: "automatic" }),
+        body: JSON.stringify({ mode: "standby" }),
       });
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
       const data = await response.json();
       if (data.success) {
         navigate("/home");
       } else {
-        console.error("Failed to set automatic mode:", data.error);
-        alert("Failed to set automatic mode: " + (data.error || "Unknown error"));
+        console.error("Failed to set standby mode:", data.error);
+        alert("Failed to set standby mode: " + (data.error || "Unknown error"));
       }
     } catch (err) {
-      console.error("Error setting automatic mode:", err);
-      alert("Error setting automatic mode: Server unreachable");
+      console.error("Error setting standby mode:", err);
+      alert("Error setting standby mode: Server unreachable");
       navigate("/home");
     } finally {
       setIsSubmitting(false);
@@ -230,7 +289,9 @@ export default function ManualWaterSet() {
       <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md ">
         <div className="text-center mb-8">
         <h1 className="text-3xl font-bold text-black">Manual Water Level Set</h1>
-        <p className="text-black-200 mt-2">Set water level for testing</p>
+        {espConnected === 'loading' && <p className="text-yellow-600 font-semibold mt-2">Checking connectivity...</p>}
+        {espConnected === false && <p className="text-red-600 font-bold mt-2">ESP Devices are Not Connected!</p>}
+        {espConnected === true && <p className="text-green-600 font-bold mt-2">Devices Connected and Ready</p>}
       </div>
         <div className="mb-4">
           <label className="block text-gray-700 text-lg mb-2">Plant Type</label>
@@ -271,14 +332,14 @@ export default function ManualWaterSet() {
           <button
             onClick={handleSetWaterLevel}
             className="bg-green-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition duration-200 disabled:bg-gray-400"
-            disabled={isPumpRunning || isSubmitting || waterLevelDisplay === "No data available"}
+            disabled={espConnected !== true || isPumpRunning || isSubmitting || waterLevelDisplay === "No data available"}
           >
             {isSubmitting ? "Setting..." : "Set Water Level"}
           </button>
           <button
             onClick={handleStopPump}
             className="bg-red-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-red-700 transition duration-200 disabled:bg-gray-400"
-            disabled={!isPumpRunning || isSubmitting}
+            disabled={espConnected !== true || !isPumpRunning || isSubmitting}
           >
             {isSubmitting ? "Stopping..." : isPumpRunning ? "Stop Pump (Auto-stop after time)" : "Stop Pump"}
           </button>
