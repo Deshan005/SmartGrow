@@ -316,7 +316,7 @@ app.post('/predict_water_level', verifyToken, (req, res) => {
 });
 
 // Automated Daily Cron Job to set water level based on growth stage
-cron.schedule('32 13 * * *', () => {
+cron.schedule('40 10 * * *', () => {
    console.log("⏰ [CRON] AUTOMATION TRIGGERED! Calculating multi-crop requirements...");
 
    const query = "SELECT plant_type, seed_date FROM user_plants"; 

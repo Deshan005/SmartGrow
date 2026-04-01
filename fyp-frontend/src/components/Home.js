@@ -24,14 +24,14 @@ export default function Home() {
       setCurrentDate(now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
       
       const nextWatering = new Date(now);
-      nextWatering.setHours(15, 32, 0, 0);
+      nextWatering.setHours(10, 40, 0, 0);
       
       // If the 13:32 time has already passed today, set it to tomorrow
       if (now >= nextWatering) {
         nextWatering.setDate(nextWatering.getDate() + 1);
       }
       
-      setNextWateringTime(nextWatering.toLocaleDateString() + ' 15:32');
+      setNextWateringTime(nextWatering.toLocaleDateString() + ' 10:40');
     };
     
     updateDateTime();
