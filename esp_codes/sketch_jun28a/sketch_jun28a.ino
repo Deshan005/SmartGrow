@@ -22,6 +22,9 @@ unsigned long pumpDuration = 0;
 bool manualPumpActive = false;
 String systemMode = "standby";
 float targetMoisture = 100.0;
+String tankStatus = "OK";
+unsigned long motorStartCheckTime = 0;
+int initialMoisture = 0;
 
 // ------------------- WiFi Connection -------------------
 void setup_wifi() {
@@ -47,6 +50,7 @@ void sendSensorData(int moistureValue, String moistureStatus, float humidity) {
     doc["status"] = moistureStatus;
     doc["humidity"] = humidity;
     doc["pumpState"] = (motorState == LOW) ? "ON" : "OFF";
+    doc["tankStatus"] = tankStatus;
 
     String payload;
     serializeJson(doc, payload);
@@ -139,6 +143,9 @@ void pollCommands() {
               motorState = LOW;
               manualPumpActive = true;
               motorStartTime = millis();
+              motorStartCheckTime = millis();
+              initialMoisture = currentMoisture;
+              tankStatus = "OK";
               Serial.println("Pump turned ON for manual watering via tracking ID");
             } else if (action == "start_pump") {
               digitalWrite(MOTOR_PIN, LOW);
@@ -146,6 +153,9 @@ void pollCommands() {
               manualPumpActive = true;
               pumpDuration = 4294967295; // Infinite duration, manually stopped
               motorStartTime = millis();
+              motorStartCheckTime = millis();
+              initialMoisture = currentMoisture;
+              tankStatus = "OK";
               Serial.println("Pump turned ON universally by start command");
             }
           }
@@ -211,6 +221,17 @@ void loop() {
       } else {
          Serial.println("Watering Duration Timeout.");
       }
+    }
+
+    // EMPTY TANK DETECTION: Check if moisture is rising after 10 seconds
+    if (manualPumpActive && (now - motorStartCheckTime > 10000)) {
+       if (currentMoisture <= initialMoisture + 1) {
+          digitalWrite(MOTOR_PIN, HIGH);
+          motorState = HIGH;
+          manualPumpActive = false;
+          tankStatus = "EMPTY";
+          Serial.println("🚨 EMERGENCY STOP: Moisture not rising. Tank likely empty!");
+       }
     }
   }
 

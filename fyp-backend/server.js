@@ -85,6 +85,7 @@ const verifyToken = (req, res, next) => {
 // Store the latest command and mode for ESP8266
 let latestCommand = null;
 let systemMode = 'standby';
+let globalTankStatus = 'OK';
 
 // Create WebSocket server on port 5001
 const wss = new WebSocket.Server({ port: 5001 });
@@ -223,12 +224,16 @@ app.get('/plant_status', verifyToken, (req, res) => {
 
 // Sensor data endpoint (log to terminal only)
 app.post('/data', (req, res) => {
-  const { moisture, status, humidity, pumpState } = req.body;
+  const { moisture, status, humidity, pumpState, tankStatus } = req.body;
+  
+  if (tankStatus) globalTankStatus = tankStatus;
+
   console.log('Received sensor data:');
   console.log(`  Moisture: ${moisture}`);
   console.log(`  Status: ${status}`);
   console.log(`  Humidity: ${humidity}`);
   console.log(`  PumpState: ${pumpState}`);
+  console.log(`  TankStatus: ${globalTankStatus}`);
 
   // Map ESP data to Home.js expected format
   const wsData = {
@@ -236,6 +241,7 @@ app.post('/data', (req, res) => {
     status: status,
     humidity: humidity || null,
     pumpState: pumpState || 'OFF',
+    tankStatus: globalTankStatus,
     height: 0, 
     temperature: 25, 
     growth_stage: 'Unknown'
@@ -289,6 +295,13 @@ app.post('/stop_pump', verifyToken, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to stop pump' });
   }
+});
+
+// Reset Tank Status Endpoint
+app.post('/reset_tank', verifyToken, (req, res) => {
+  globalTankStatus = 'OK';
+  broadcastSensorData({ tankStatus: 'OK' });
+  res.json({ success: true, message: 'Tank reset successfully' });
 });
 
 // Start pump endpoint
@@ -364,6 +377,11 @@ cron.schedule('40 10 * * *', () => {
      });
 
      if (plantsProcessed > 0) {
+        if (globalTankStatus === 'EMPTY') {
+            console.log("❌ [CRON] Skipped automation: Tank is flagged as EMPTY. Please refill and reset.");
+            return;
+        }
+
         const finalWaterLevel = totalWaterLevelNeeded / plantsProcessed;
         const SENSOR_TIMEOUT_MS = 60000; // 1 min total window
         const cmdId = Math.floor(Math.random() * 1000000);

@@ -16,6 +16,7 @@ export default function Home() {
   const [currentDate, setCurrentDate] = useState("");
   const [nextWateringTime, setNextWateringTime] = useState("");
   const [plantStatuses, setPlantStatuses] = useState([]);
+  const [tankStatus, setTankStatus] = useState("OK");
   const hasAlerted = React.useRef(false);
 
   useEffect(() => {
@@ -72,6 +73,7 @@ export default function Home() {
         setHumidity(data.humidity || 0);
         setGrowthStage(data.growth_stage || 'Unknown');
         setPumpState(data.pumpState || 'OFF');
+        if (data.tankStatus) setTankStatus(data.tankStatus);
         setIsPumpRunning(data.pumpState === "ON");
         resetConnectionTimeout(); // We got regular data!
       } catch (err) {
@@ -162,6 +164,30 @@ export default function Home() {
     }
   };
 
+  const handleResetTank = async () => {
+    try {
+      const response = await fetch("http://localhost:3001/reset_tank", {
+        method: "POST",
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+      });
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+      const data = await response.json();
+      if (data.success) {
+        setTankStatus("OK");
+        alert("Tank status reset to OK. System ready.");
+      }
+    } catch (err) {
+      console.error("Error resetting tank:", err);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate("/login");
@@ -178,6 +204,24 @@ return (
 
     <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-12">
       
+      {espConnected === false && (
+        <div className="bg-orange-600 border-2 border-white text-white p-4 rounded-xl font-bold animate-pulse text-center mb-8 w-full max-w-2xl shadow-2xl">
+           ⚠️ WARNING: DEVICE OFFLINE! No connection to greenhouse hardware.
+        </div>
+      )}
+
+      {tankStatus === "EMPTY" && (
+        <div className="bg-red-600 border-2 border-white text-white p-4 rounded-xl font-bold animate-pulse text-center mb-8 w-full max-w-2xl shadow-2xl">
+           🚨 ERROR: WATER TANK IS EMPTY! System safety-halted.
+           <button 
+              onClick={handleResetTank}
+              className="mt-3 bg-white text-red-600 px-4 py-2 rounded-lg font-bold hover:bg-gray-200 transition"
+           >
+              I refilled the tank (Reset)
+           </button>
+        </div>
+      )}
+
       <div className="bg-white/9 backdrop-blur-md px-6 py-4 rounded-xl shadow-lg text-center mb-10">
         <h1 className="text-3xl sm:text-4xl font-bold text-white">
           SmartGrow Monitoring Dashboard
